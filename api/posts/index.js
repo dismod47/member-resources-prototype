@@ -13,6 +13,14 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      // Check if DATABASE_URL is configured
+      if (!process.env.DATABASE_URL) {
+        return res.status(500).json({ 
+          error: 'Database not configured', 
+          details: 'DATABASE_URL environment variable is not set. Please configure it in Vercel settings.' 
+        });
+      }
+
       // Get all posts with their comment counts
       const posts = await sql`
         SELECT 
@@ -35,16 +43,16 @@ export default async function handler(req, res) {
       `;
 
       // Transform the data to match the frontend format
-      const transformedPosts = posts.map(post => ({
+      const transformedPosts = (posts || []).map(post => ({
         id: post.id,
         title: post.title,
         description: post.description,
-        timestamp: post.timestamp.toISOString(),
+        timestamp: post.timestamp ? post.timestamp.toISOString() : new Date().toISOString(),
         isDemo: post.is_demo || false,
         comments: Array.isArray(post.comments) ? post.comments.map(comment => ({
           id: comment.id,
           text: comment.text,
-          timestamp: comment.timestamp.toISOString()
+          timestamp: comment.timestamp ? comment.timestamp.toISOString() : new Date().toISOString()
         })) : []
       }));
 
@@ -154,7 +162,16 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('Database error:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error('Error stack:', error.stack);
+    // Return more detailed error in development, generic in production
+    const errorMessage = process.env.NODE_ENV === 'development' 
+      ? error.message 
+      : 'Internal server error';
+    res.status(500).json({ 
+      error: 'Internal server error', 
+      details: errorMessage,
+      type: error.constructor.name
+    });
   }
 }
 

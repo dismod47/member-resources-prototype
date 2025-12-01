@@ -4,11 +4,17 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Get all posts
 export const getPosts = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/posts`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch posts');
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/posts`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.details || errorData.error || `HTTP ${response.status}: Failed to fetch posts`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('API Error:', error);
+    throw error;
   }
-  return response.json();
 };
 
 // Create a new post

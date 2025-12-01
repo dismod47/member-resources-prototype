@@ -25,10 +25,10 @@ const MemberResourcesApp = () => {
       setLoading(true);
       setError(null);
       const data = await api.getPosts();
-      setPosts(data);
+      setPosts(data || []);
     } catch (err) {
       console.error('Error loading posts:', err);
-      setError('Failed to load posts. Please refresh the page.');
+      setError(err.message || 'Failed to load posts. Please refresh the page.');
     } finally {
       setLoading(false);
     }
