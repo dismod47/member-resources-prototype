@@ -26,11 +26,14 @@ export default async function handler(req, res) {
         RETURNING id, post_id, text, timestamp
       `;
 
+      // Helper to convert timestamp
+      const toISO = (ts) => ts instanceof Date ? ts.toISOString() : (typeof ts === 'string' ? ts : new Date(ts).toISOString());
+
       res.status(201).json({
         id: newComment.id,
         postId: newComment.post_id,
         text: newComment.text,
-        timestamp: newComment.timestamp.toISOString()
+        timestamp: toISO(newComment.timestamp)
       });
     }
     else if (req.method === 'PUT') {
@@ -52,11 +55,14 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: 'Comment not found' });
       }
 
+      // Helper to convert timestamp
+      const toISO = (ts) => ts instanceof Date ? ts.toISOString() : (typeof ts === 'string' ? ts : new Date(ts).toISOString());
+
       res.status(200).json({
         id: updatedComment.id,
         postId: updatedComment.post_id,
         text: updatedComment.text,
-        timestamp: updatedComment.timestamp.toISOString()
+        timestamp: toISO(updatedComment.timestamp)
       });
     }
     else if (req.method === 'DELETE') {

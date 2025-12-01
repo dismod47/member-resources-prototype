@@ -67,17 +67,31 @@ export default async function handler(req, res) {
         throw tableError; // Re-throw if it's a different error
       }
 
+      // Helper function to convert timestamp to ISO string
+      const toISOString = (timestamp) => {
+        if (!timestamp) return new Date().toISOString();
+        if (timestamp instanceof Date) return timestamp.toISOString();
+        if (typeof timestamp === 'string') {
+          // If it's already an ISO string, return as is
+          if (timestamp.includes('T') && timestamp.includes('Z')) return timestamp;
+          // Otherwise try to parse it
+          const date = new Date(timestamp);
+          return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+        }
+        return new Date().toISOString();
+      };
+
       // Transform the data to match the frontend format
       const transformedPosts = (posts || []).map(post => ({
         id: post.id,
         title: post.title,
         description: post.description,
-        timestamp: post.timestamp ? post.timestamp.toISOString() : new Date().toISOString(),
+        timestamp: toISOString(post.timestamp),
         isDemo: post.is_demo || false,
         comments: Array.isArray(post.comments) ? post.comments.map(comment => ({
           id: comment.id,
           text: comment.text,
-          timestamp: comment.timestamp ? comment.timestamp.toISOString() : new Date().toISOString()
+          timestamp: toISOString(comment.timestamp)
         })) : []
       }));
 
@@ -97,11 +111,14 @@ export default async function handler(req, res) {
         RETURNING id, title, description, timestamp
       `;
 
+      // Helper to convert timestamp
+      const toISO = (ts) => ts instanceof Date ? ts.toISOString() : (typeof ts === 'string' ? ts : new Date(ts).toISOString());
+      
       res.status(201).json({
         id: newPost.id,
         title: newPost.title,
         description: newPost.description,
-        timestamp: newPost.timestamp.toISOString(),
+        timestamp: toISO(newPost.timestamp),
         isDemo: false,
         comments: []
       });
@@ -142,16 +159,19 @@ export default async function handler(req, res) {
         ORDER BY timestamp ASC
       `;
 
+      // Helper to convert timestamp
+      const toISO = (ts) => ts instanceof Date ? ts.toISOString() : (typeof ts === 'string' ? ts : new Date(ts).toISOString());
+      
       res.status(200).json({
         id: updatedPost.id,
         title: updatedPost.title,
         description: updatedPost.description,
-        timestamp: updatedPost.timestamp.toISOString(),
+        timestamp: toISO(updatedPost.timestamp),
         isDemo: updatedPost.is_demo || false,
         comments: comments.map(c => ({
           id: c.id,
           text: c.text,
-          timestamp: c.timestamp.toISOString()
+          timestamp: toISO(c.timestamp)
         }))
       });
     }
