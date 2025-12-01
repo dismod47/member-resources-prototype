@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MessageSquare, Edit2, Trash2, X, Calendar, GraduationCap, Users, FileText, Code, Briefcase, UserCheck, Shield, User } from 'lucide-react';
+import * as api from './api';
 
 const MemberResourcesApp = () => {
   const [activeTab, setActiveTab] = useState('resources');
@@ -11,117 +12,150 @@ const MemberResourcesApp = () => {
   const [newComment, setNewComment] = useState('');
   const [editingPost, setEditingPost] = useState(null);
   const [editingComment, setEditingComment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Load posts from localStorage on mount
+  // Load posts from API on mount
   useEffect(() => {
-    const saved = localStorage.getItem('memberResourcesPosts');
-    if (saved) {
-      setPosts(JSON.parse(saved));
-    }
+    loadPosts();
   }, []);
 
-  // Save posts to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('memberResourcesPosts', JSON.stringify(posts));
-  }, [posts]);
+  const loadPosts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getPosts();
+      setPosts(data);
+    } catch (err) {
+      console.error('Error loading posts:', err);
+      setError('Failed to load posts. Please refresh the page.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const createPost = () => {
+  const createPost = async () => {
     if (!newPost.title.trim()) return;
     
-    const post = {
-      id: Date.now(),
-      title: newPost.title,
-      description: newPost.description,
-      timestamp: new Date().toISOString(),
-      comments: []
-    };
-    
-    setPosts([post, ...posts]);
-    setNewPost({ title: '', description: '' });
-    setShowNewPost(false);
+    try {
+      const post = await api.createPost(newPost.title, newPost.description);
+      setPosts([post, ...posts]);
+      setNewPost({ title: '', description: '' });
+      setShowNewPost(false);
+      setError(null);
+    } catch (err) {
+      console.error('Error creating post:', err);
+      setError('Failed to create post. Please try again.');
+    }
   };
 
-  const deletePost = (postId) => {
-    setPosts(posts.filter(p => p.id !== postId));
-    setSelectedPost(null);
+  const deletePost = async (postId) => {
+    try {
+      await api.deletePost(postId);
+      setPosts(posts.filter(p => p.id !== postId));
+      setSelectedPost(null);
+      setError(null);
+    } catch (err) {
+      console.error('Error deleting post:', err);
+      setError('Failed to delete post. Please try again.');
+    }
   };
 
-  const updatePost = (postId, updates) => {
-    setPosts(posts.map(p => p.id === postId ? { ...p, ...updates } : p));
-    setEditingPost(null);
+  const updatePost = async (postId, title, description) => {
+    try {
+      const updated = await api.updatePost(postId, title, description);
+      setPosts(posts.map(p => p.id === postId ? updated : p));
+      if (selectedPost && selectedPost.id === postId) {
+        setSelectedPost(updated);
+      }
+      setEditingPost(null);
+      setError(null);
+    } catch (err) {
+      console.error('Error updating post:', err);
+      setError('Failed to update post. Please try again.');
+    }
   };
 
-  const addComment = (postId) => {
+  const addComment = async (postId) => {
     if (!newComment.trim()) return;
     
-    setPosts(posts.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          comments: [...p.comments, {
-            id: Date.now(),
-            text: newComment,
-            timestamp: new Date().toISOString()
-          }]
-        };
-      }
-      return p;
-    }));
-    
-    setNewComment('');
-    
-    // Update selected post if viewing
-    if (selectedPost && selectedPost.id === postId) {
-      const updated = posts.find(p => p.id === postId);
-      setSelectedPost({
-        ...updated,
-        comments: [...updated.comments, {
-          id: Date.now(),
-          text: newComment,
-          timestamp: new Date().toISOString()
-        }]
+    try {
+      const comment = await api.addComment(postId, newComment);
+      const updatedPosts = posts.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            comments: [...p.comments, comment]
+          };
+        }
+        return p;
       });
+      setPosts(updatedPosts);
+      
+      // Update selected post if viewing
+      if (selectedPost && selectedPost.id === postId) {
+        const updatedPost = updatedPosts.find(p => p.id === postId);
+        setSelectedPost(updatedPost);
+      }
+      
+      setNewComment('');
+      setError(null);
+    } catch (err) {
+      console.error('Error adding comment:', err);
+      setError('Failed to add comment. Please try again.');
     }
   };
 
-  const deleteComment = (postId, commentId) => {
-    setPosts(posts.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          comments: p.comments.filter(c => c.id !== commentId)
-        };
-      }
-      return p;
-    }));
-    
-    if (selectedPost && selectedPost.id === postId) {
-      setSelectedPost({
-        ...selectedPost,
-        comments: selectedPost.comments.filter(c => c.id !== commentId)
+  const deleteComment = async (postId, commentId) => {
+    try {
+      await api.deleteComment(commentId);
+      const updatedPosts = posts.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            comments: p.comments.filter(c => c.id !== commentId)
+          };
+        }
+        return p;
       });
+      setPosts(updatedPosts);
+      
+      if (selectedPost && selectedPost.id === postId) {
+        const updatedPost = updatedPosts.find(p => p.id === postId);
+        setSelectedPost(updatedPost);
+      }
+      setError(null);
+    } catch (err) {
+      console.error('Error deleting comment:', err);
+      setError('Failed to delete comment. Please try again.');
     }
   };
 
-  const updateComment = (postId, commentId, newText) => {
-    setPosts(posts.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          comments: p.comments.map(c => c.id === commentId ? { ...c, text: newText } : c)
-        };
-      }
-      return p;
-    }));
-    
-    if (selectedPost && selectedPost.id === postId) {
-      setSelectedPost({
-        ...selectedPost,
-        comments: selectedPost.comments.map(c => c.id === commentId ? { ...c, text: newText } : c)
+  const updateComment = async (postId, commentId, newText) => {
+    try {
+      const updatedComment = await api.updateComment(commentId, newText);
+      const updatedPosts = posts.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            comments: p.comments.map(c => c.id === commentId ? updatedComment : c)
+          };
+        }
+        return p;
       });
+      setPosts(updatedPosts);
+      
+      if (selectedPost && selectedPost.id === postId) {
+        const updatedPost = updatedPosts.find(p => p.id === postId);
+        setSelectedPost(updatedPost);
+      }
+      
+      setEditingComment(null);
+      setError(null);
+    } catch (err) {
+      console.error('Error updating comment:', err);
+      setError('Failed to update comment. Please try again.');
     }
-    
-    setEditingComment(null);
   };
 
   const filteredPosts = posts.filter(post => {
@@ -261,6 +295,19 @@ const MemberResourcesApp = () => {
                   </p>
                 </div>
 
+                {/* Error Message */}
+                {error && (
+                  <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                    {error}
+                    <button 
+                      onClick={() => setError(null)}
+                      className="ml-4 text-red-700 hover:text-red-900 underline"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
                 {/* Search and New Post */}
                 <div className="mb-6 flex gap-4">
                   <div className="flex-1 relative">
@@ -323,7 +370,11 @@ const MemberResourcesApp = () => {
 
                 {/* Posts Feed */}
                 <div className="space-y-4">
-                  {filteredPosts.length === 0 ? (
+                  {loading ? (
+                    <div className="text-center py-12 text-gray-600">
+                      Loading posts...
+                    </div>
+                  ) : filteredPosts.length === 0 ? (
                     <div className="text-center py-12 text-gray-600">
                       {searchQuery ? 'No posts match your search' : 'No posts yet. Create the first one!'}
                     </div>
@@ -334,7 +385,14 @@ const MemberResourcesApp = () => {
                         onClick={() => setSelectedPost(post)}
                         className="bg-gray-50 rounded-lg p-6 border border-gray-300 hover:border-gray-400 cursor-pointer transition"
                       >
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">{post.title}</h3>
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="text-xl font-bold text-gray-900 flex-1">{post.title}</h3>
+                          {post.isDemo && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full ml-3">
+                              Demo
+                            </span>
+                          )}
+                        </div>
                         <p className="text-gray-700 mb-4 line-clamp-2">
                           {post.description.substring(0, 200)}
                           {post.description.length > 200 ? '...' : ''}
@@ -380,8 +438,7 @@ const MemberResourcesApp = () => {
                       <div className="flex gap-3">
                         <button
                           onClick={() => {
-                            updatePost(selectedPost.id, { title: newPost.title, description: newPost.description });
-                            setSelectedPost({ ...selectedPost, title: newPost.title, description: newPost.description });
+                            updatePost(selectedPost.id, newPost.title, newPost.description);
                           }}
                           className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
                         >
@@ -398,24 +455,35 @@ const MemberResourcesApp = () => {
                   ) : (
                     <div>
                       <div className="flex justify-between items-start mb-4">
-                        <h1 className="text-3xl font-bold text-gray-900">{selectedPost.title}</h1>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingPost(selectedPost.id);
-                              setNewPost({ title: selectedPost.title, description: selectedPost.description });
-                            }}
-                            className="p-2 text-gray-600 hover:text-blue-600 transition"
-                          >
-                            <Edit2 size={18} />
-                          </button>
-                          <button
-                            onClick={() => deletePost(selectedPost.id)}
-                            className="p-2 text-gray-600 hover:text-red-600 transition"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <h1 className="text-3xl font-bold text-gray-900">{selectedPost.title}</h1>
+                            {selectedPost.isDemo && (
+                              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                                Demo
+                              </span>
+                            )}
+                          </div>
                         </div>
+                        {!selectedPost.isDemo && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingPost(selectedPost.id);
+                                setNewPost({ title: selectedPost.title, description: selectedPost.description });
+                              }}
+                              className="p-2 text-gray-600 hover:text-blue-600 transition"
+                            >
+                              <Edit2 size={18} />
+                            </button>
+                            <button
+                              onClick={() => deletePost(selectedPost.id)}
+                              className="p-2 text-gray-600 hover:text-red-600 transition"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <p className="text-gray-700 whitespace-pre-wrap mb-4">{selectedPost.description}</p>
                       <div className="text-sm text-gray-600">
