@@ -21,26 +21,51 @@ export default async function handler(req, res) {
         });
       }
 
+      // Validate DATABASE_URL format
+      const dbUrl = process.env.DATABASE_URL.trim();
+      if (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://')) {
+        return res.status(500).json({
+          error: 'Invalid DATABASE_URL format',
+          details: `DATABASE_URL should start with 'postgresql://' but starts with: ${dbUrl.substring(0, 30)}...`,
+          fix: 'Copy the full connection string from Neon dashboard (Connection Details tab)',
+          currentValue: dbUrl.substring(0, 20) + '...' // Don't expose full URL for security
+        });
+      }
+
       // Get all posts with their comment counts
-      const posts = await sql`
-        SELECT 
-          p.id,
-          p.title,
-          p.description,
-          p.timestamp,
-          p.is_demo,
-          COALESCE(json_agg(
-            json_build_object(
-              'id', c.id,
-              'text', c.text,
-              'timestamp', c.timestamp
-            ) ORDER BY c.timestamp ASC
-          ) FILTER (WHERE c.id IS NOT NULL), '[]') as comments
-        FROM posts p
-        LEFT JOIN comments c ON p.id = c.post_id
-        GROUP BY p.id, p.title, p.description, p.timestamp, p.is_demo
-        ORDER BY p.timestamp DESC
-      `;
+      // Handle case where tables might not exist yet
+      let posts;
+      try {
+        posts = await sql`
+          SELECT 
+            p.id,
+            p.title,
+            p.description,
+            p.timestamp,
+            p.is_demo,
+            COALESCE(json_agg(
+              json_build_object(
+                'id', c.id,
+                'text', c.text,
+                'timestamp', c.timestamp
+              ) ORDER BY c.timestamp ASC
+            ) FILTER (WHERE c.id IS NOT NULL), '[]') as comments
+          FROM posts p
+          LEFT JOIN comments c ON p.id = c.post_id
+          GROUP BY p.id, p.title, p.description, p.timestamp, p.is_demo
+          ORDER BY p.timestamp DESC
+        `;
+      } catch (tableError) {
+        if (tableError.message?.includes('does not exist') || tableError.message?.includes('relation')) {
+          return res.status(500).json({
+            error: 'Database tables not found',
+            details: 'The posts or comments tables do not exist.',
+            fix: 'Run the schema.sql script in Neon SQL Editor to create the required tables.',
+            sqlError: tableError.message
+          });
+        }
+        throw tableError; // Re-throw if it's a different error
+      }
 
       // Transform the data to match the frontend format
       const transformedPosts = (posts || []).map(post => ({
@@ -163,14 +188,18 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Database error:', error);
     console.error('Error stack:', error.stack);
-    // Return more detailed error in development, generic in production
-    const errorMessage = process.env.NODE_ENV === 'development' 
-      ? error.message 
-      : 'Internal server error';
+    console.error('Error message:', error.message);
+    
+    // Return detailed error for debugging
     res.status(500).json({ 
       error: 'Internal server error', 
-      details: errorMessage,
-      type: error.constructor.name
+      details: error.message || 'Unknown error',
+      type: error.constructor.name,
+      hint: error.message?.includes('does not exist') 
+        ? 'Tables may not exist. Run schema.sql in Neon SQL Editor to create them.'
+        : error.message?.includes('connection')
+        ? 'Database connection failed. Check DATABASE_URL format in Vercel settings.'
+        : 'Check Vercel function logs for more details.'
     });
   }
 }
